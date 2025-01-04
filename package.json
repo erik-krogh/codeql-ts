@@ -1,0 +1,51 @@
+{
+  "name": "codeql-ts",
+  "version": "0.0.1",
+  "description": "Simple utility for working with the CodeQL CLI",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "npx tsc",
+    "lint": "npx eslint src",
+    "format": "npx prettier -w .",
+    "format-check": "npx prettier -c .",
+    "test": "npx mocha --forbid-only test/*.ts",
+    "checks": "npm run format-check && npm run lint && npm run build && npm run test",
+    "watch": "npx tsc --watch"
+  },
+  "author": "Erik Krogh Kristensen <erik-krogh@github.com>",
+  "homepage": "https://github.com/erik-krogh/codeql-ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/erik-krogh/codeql-ts.git"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@types/chai": "^5.0.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.19.0",
+    "@typescript-eslint/parser": "^8.19.0",
+    "chai": "^5.1.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "mocha": "^11.0.1",
+    "prettier": "^3.4.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0"
+  },
+  "prettier": {
+    "overrides": [
+      {
+        "files": [
+          "*.qls"
+        ],
+        "options": {
+          "parser": "yaml"
+        }
+      }
+    ]
+  }
+}
