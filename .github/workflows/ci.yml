@@ -22,6 +22,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Install the gh codeql extension
+        run: gh extensions install github/gh-codeql
+
       - name: Install dependencies
         run: npm ci
 
