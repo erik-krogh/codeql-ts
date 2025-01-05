@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { CodeQL } from "../src/index.js";
+import * as codeql from "../src/index.js";
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,5 +63,37 @@ describe("the codeql TS wrapper", function () {
     // Cleaning up the temporary directory.
     dir.removeCallback();
     suite.removeCallback();
+  });
+
+  it("should have the expected suites", async function () {
+    expect(codeql.SupportedLanguages).to.have.length(9);
+    expect(codeql.SupportedLanguageIds).to.have.length(9);
+
+    expect(codeql.SupportedLanguages).to.include("javascript");
+    expect(codeql.SupportedLanguageIds).to.include("js");
+
+    // check the mapping, mapping back-and-forth should be idempotent
+    for (const lang of codeql.SupportedLanguages) {
+      const secondLang =
+        codeql.LanguageIdToLanguage[codeql.LanguageToLanguageId[lang]];
+      expect(secondLang).to.equal(lang);
+
+      // check the langId makes sense
+      const langId = codeql.LanguageToLanguageId[lang];
+      expect(langId).to.be.a("string");
+      expect(codeql.SupportedLanguageIds).to.include(langId);
+    }
+
+    // craft a copy of langIds from lang names, and check it's the same
+    const langIds = codeql.SupportedLanguages.map(
+      (lang) => codeql.LanguageToLanguageId[lang],
+    ).sort();
+    expect(langIds).to.deep.equal(codeql.SupportedLanguageIds.sort());
+
+    // same, but the other way around
+    const langNames = codeql.SupportedLanguageIds.map(
+      (langId) => codeql.LanguageIdToLanguage[langId],
+    ).sort();
+    expect(langNames).to.deep.equal(codeql.SupportedLanguages.sort());
   });
 });
