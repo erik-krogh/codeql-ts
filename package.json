@@ -1,6 +1,6 @@
 {
   "name": "codeql-ts",
-  "version": "0.0.1",
+  "version": "1.0.1",
   "description": "Simple utility for working with the CodeQL CLI",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
