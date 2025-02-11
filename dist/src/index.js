@@ -1,7 +1,10 @@
-import spawn from "cross-spawn";
 import log from "loglevel";
 import fs from "node:fs";
+import fsPromise from "node:fs/promises";
 import tmp from "tmp";
+import fsSync from "node:fs";
+import cp from "node:child_process";
+import events from "node:events";
 /**
  * A mapping from language IDs to language names.
  * All the language ids/names values/types derives from this constant.
@@ -57,6 +60,7 @@ export function languageFromQueryId(queryId) {
  */
 export class CodeQL {
     packVersions;
+    timeout;
     /**
      * A cache mapping query IDs to `.ql` file paths.
      */
@@ -65,66 +69,69 @@ export class CodeQL {
      * Create a new CodeQL CLI wrapper.
      * @param codeQlVersion The version of the CodeQL CLI to use. E.g. `2.9.0`.
      * @param packVersions A mapping from query pack names to versions. E.g. `codeql/javascript-queries` to `1.1.2`.
+     * @param timeout The maximum time to wait for the command to execute, in milliseconds. Defaults to -1, which indicates no timeout.
      */
-    constructor(codeQlVersion, packVersions) {
-        this.packVersions = packVersions;
-        CodeQL.ensureCliVersion(codeQlVersion);
+    static async make(codeQlVersion, packVersions, timeout = -1) {
+        if (timeout < -1) {
+            throw new Error("Timeout must be -1 or a positive number.");
+        }
+        const codeql = new CodeQL(packVersions, timeout);
+        await codeql.ensureCliVersion(codeQlVersion);
+        return codeql;
     }
-    static ensureGhCliInstalled() {
+    /**
+     * Create a new CodeQL CLI wrapper.
+     * @param packVersions A mapping from query pack names to versions. E.g. `codeql/javascript-queries` to `1.1.2`.
+     * @param timeout The maximum time to wait for the command to execute, in milliseconds. Defaults to -1, which indicates no timeout.
+     */
+    constructor(packVersions, timeout) {
+        this.packVersions = packVersions;
+        this.timeout = timeout;
+    }
+    async ensureGhCliInstalled() {
         try {
-            const version = this.gh(["--version"], {
-                stdio: ["ignore", "pipe", "ignore"],
-            });
+            const version = await this.gh(["--version"]);
             log.debug(`Found gh CLI version ${version}`);
         }
         catch {
             throw new Error(`Cannot find gh CLI.`);
         }
     }
-    static ensureGhCliExtensionInstalled() {
-        this.ensureGhCliInstalled();
+    async ensureGhCliExtensionInstalled() {
+        await this.ensureGhCliInstalled();
         log.debug("Ensuring gh CLI extension for CodeQL is installed");
-        const availableExtensions = this.gh(["extensions", "list"], {
-            stdio: ["ignore", "pipe", "ignore"],
-        });
+        const availableExtensions = await this.gh(["extensions", "list"]);
         if (availableExtensions.includes("github/gh-codeql")) {
             log.debug("gh CLI extension for CodeQL is already installed");
         }
         else {
             log.debug("Installing gh CLI extension for CodeQL");
-            this.gh(["extensions", "install", "github/gh-codeql"], {
-                stdio: "pipe",
-            });
+            await this.gh(["extensions", "install", "github/gh-codeql"]);
         }
     }
     /** Simple wrapper around `spawn` for running the GitHub CLI. */
-    static gh(args, options) {
-        const result = spawn.sync("gh", args, {
-            ...options,
-            encoding: "utf8",
-        });
-        if (result.error) {
+    async gh(args, options) {
+        const [code, out, err] = await runAsyncShell("gh", args, options, this.timeout);
+        if (code !== 0) {
             throw new Error(`Failed to execute: gh ${args.join(" ")}`, {
-                cause: result.error,
+                cause: err,
             });
         }
-        return result.stdout;
+        return out;
     }
     /** Get the version of the CodeQL CLI. */
-    static getCliVersion() {
-        this.ensureGhCliExtensionInstalled();
-        return this.gh(["codeql", "version", "--format", "terse"], {
-            stdio: ["ignore", "pipe", "inherit"],
-        }).trim();
+    async getCliVersion() {
+        await this.ensureGhCliExtensionInstalled();
+        return (await this.gh(["codeql", "version", "--format", "terse"], {})).trim();
     }
     /** Check that the given CodeQL version is installed, and if not install it. */
-    static ensureCliVersion(version) {
-        const curVersion = this.getCliVersion();
+    async ensureCliVersion(version) {
+        const curVersion = await this.getCliVersion();
         if (curVersion !== version) {
             log.debug(`Expected CodeQL version ${version}, got ${curVersion}. Trying to install it.`);
-            this.gh(["codeql", "set-channel", "release"], {});
-            this.gh(["codeql", "set-version", version], {});
-            if (this.getCliVersion() !== version) {
+            await this.gh(["codeql", "set-channel", "release"], {});
+            await this.gh(["codeql", "set-version", version], {});
+            if ((await this.getCliVersion()) !== version) {
                 throw new Error(`Failed to install CodeQL version ${version}`);
             }
         }
@@ -158,9 +165,9 @@ export class CodeQL {
      *
      * Buildless extraction (build mode none) is enabled for Java and C#.
      */
-    runCommand(cwd, category, command, ...args) {
+    async runCommand(cwd, category, command, ...args) {
         log.debug(`Running codeql ${category} ${command} ${args.join(" ")}`);
-        CodeQL.gh(["codeql", category, command, ...args], {
+        await this.gh(["codeql", category, command, ...args], {
             cwd,
             stdio: ["ignore", "ignore", "inherit"],
             env: {
@@ -177,14 +184,14 @@ export class CodeQL {
      * @param sourceRoot The root of the source code to analyze.
      * @param databasePath The path to the database to create. Should be an empty (or non-existent) directory.
      */
-    createDatabase(language, sourceRoot, databasePath) {
-        this.runCommand(sourceRoot, "database", "create", "-j0", "--language", language, "--source-root", sourceRoot, databasePath);
+    async createDatabase(language, sourceRoot, databasePath) {
+        await this.runCommand(sourceRoot, "database", "create", "-j0", "--language", language, "--source-root", sourceRoot, databasePath);
     }
     /**
      * Run one or more CodeQL queries against a database and export the results as SARIF.
      */
-    analyzeDatabase(databasePath, output, ...queries) {
-        this.runCommand(databasePath, "database", "analyze", databasePath, "-j0", "--download", "--format=sarif-latest", "--sarif-add-query-help", "--output", output, ...queries);
+    async analyzeDatabase(databasePath, output, ...queries) {
+        await this.runCommand(databasePath, "database", "analyze", databasePath, "-j0", "--download", "--format=sarif-latest", "--sarif-add-query-help", "--output", output, ...queries);
     }
     /**
      * Create a `.qls` file referencing the given queries.
@@ -206,7 +213,7 @@ export class CodeQL {
         return suite;
     }
     /** Resolve a list of query IDs to their corresponding `.ql` files. */
-    resolveQueries(language, ...ids) {
+    async resolveQueries(language, ...ids) {
         // figure out which queries we need to resolve
         const unresolved = ids.filter((id) => !this.resolvedQueries.has(id));
         if (unresolved.length > 0) {
@@ -214,9 +221,13 @@ export class CodeQL {
             const suite = this.makeSuite(language, ...unresolved);
             // run the resolve queries command (we can't use runCommand here because
             // resolve queries doesn't take an --output argument)
-            const resolved = JSON.parse(CodeQL.gh(["codeql", "resolve", "queries", "--format=json", suite.name], {
-                stdio: ["ignore", "pipe", "inherit"],
-            }));
+            const resolved = JSON.parse(await this.gh([
+                "codeql",
+                "resolve",
+                "queries",
+                "--format=json",
+                suite.name,
+            ]));
             suite.removeCallback();
             // add the resolved queries to the cache
             for (let i = 0; i < unresolved.length; i++) {
@@ -231,18 +242,18 @@ export class CodeQL {
      *
      * @returns A map from file paths to the classification of the file.
      */
-    classifyFiles(databasePath, language) {
+    async classifyFiles(databasePath, language) {
         // first, we need to resolve the file-classifier query for the given language
-        const [classifier] = this.resolveQueries(language, `${LanguageToLanguageId[language]}/file-classifier`);
+        const [classifier] = await this.resolveQueries(language, `${LanguageToLanguageId[language]}/file-classifier`);
         if (!classifier) {
             throw new Error(`Could not resolve file-classifier query for ${language}`);
         }
         // then, we run the query
         const output = tmp.fileSync({ postfix: ".bqrs" });
-        this.runCommand(databasePath, "query", "run", "--threads", "-1", "--output", output.name, "--database", databasePath, classifier);
+        await this.runCommand(databasePath, "query", "run", "--threads", "-1", "--output", output.name, "--database", databasePath, classifier);
         // next, we convert the results to JSON; again.
         const json = tmp.fileSync({ postfix: ".json" });
-        this.runCommand(databasePath, "bqrs", "decode", "--format", "json", "--output", json.name, output.name);
+        await this.runCommand(databasePath, "bqrs", "decode", "--format", "json", "--output", json.name, output.name);
         // finally, we read the results
         const results = JSON.parse(fs.readFileSync(json.name, "utf8"));
         output.removeCallback();
@@ -250,5 +261,54 @@ export class CodeQL {
         // and return the interesting bits
         return new Map(results["#select"].tuples.map((tuple) => [tuple[0].label, tuple[1]]));
     }
+}
+async function runAsyncShell(command, args, options, timeout) {
+    const stdoutFile = tmp.tmpNameSync();
+    const stdoutStream = fsSync.createWriteStream(stdoutFile);
+    await events.once(stdoutStream, "open");
+    const stderrFile = tmp.tmpNameSync();
+    const stderrStream = fsSync.createWriteStream(stderrFile);
+    await events.once(stderrStream, "open");
+    const proc = cp.spawn(command, args, {
+        stdio: ["ignore", stdoutStream, stderrStream],
+        ...options,
+    });
+    let codeFinished = false;
+    let timeoutHandler = undefined;
+    const codePromise = new Promise((resolve, _reject) => {
+        proc.on("close", (code) => {
+            codeFinished = true;
+            if (timeoutHandler) {
+                clearTimeout(timeoutHandler);
+            }
+            resolve(code ?? 0);
+        });
+    });
+    const timeoutPromise = new Promise((resolve) => {
+        if (timeout <= 0) {
+            return;
+        }
+        timeoutHandler = setTimeout(() => {
+            if (codeFinished) {
+                return;
+            }
+            timeoutHandler = undefined;
+            proc.kill("SIGKILL"); // kill the process, hard!
+            resolve(124); // resolve with exit code 124
+        }, timeout * 1000);
+    });
+    const code = await Promise.race([codePromise, timeoutPromise]);
+    // if either file is larger than 1GB, exit with an error
+    if (fsSync.statSync(stdoutFile).size > 1024 * 1024 * 1024 ||
+        fsSync.statSync(stderrFile).size > 1024 * 1024 * 1024) {
+        return [124, "", "stdout or stderr file is larger than 1GB"];
+    }
+    const stdout = await fsPromise.readFile(stdoutFile, "utf-8");
+    stdoutStream.close();
+    await fsPromise.unlink(stdoutFile);
+    const stderr = await fsPromise.readFile(stderrFile, "utf-8");
+    stderrStream.close();
+    await fsPromise.unlink(stderrFile);
+    return [code, stdout, stderr];
 }
 //# sourceMappingURL=index.js.map

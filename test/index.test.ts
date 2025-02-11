@@ -12,13 +12,13 @@ const source = path.dirname(fileURLToPath(new URL(import.meta.url)));
 /** the root path to this repo */
 const root = path.resolve(source, "..");
 
-describe("the codeql TS wrapper", function () {
+describe("the codeql TS wrapper", async function () {
   // 5 minutes should be way too much, but I want to be sure.
   this.timeout(5 * 60 * 1000);
 
   it("should work", async function () {
     console.log("Initializing CodeQL with version 2.20.0.");
-    const codeql = new CodeQL("2.20.0", {
+    const codeql = await CodeQL.make("2.20.0", {
       "codeql/javascript-queries": "1.2.5",
     });
 
@@ -29,7 +29,7 @@ describe("the codeql TS wrapper", function () {
     const dir = tmp.dirSync({ unsafeCleanup: true });
 
     console.log("Creating a database of the current repository.");
-    codeql.createDatabase("javascript", root, dir.name);
+    await codeql.createDatabase("javascript", root, dir.name);
 
     console.log("Resolving queries for JavaScript.");
     const suite = codeql.makeSuite("javascript", "js/xss", "js/path-injection");
@@ -38,7 +38,7 @@ describe("the codeql TS wrapper", function () {
     const resultsPath = path.join(dir.name, "results.sarif");
 
     console.log("Running the queries on the database.");
-    codeql.analyzeDatabase(dir.name, resultsPath, suite.name);
+    await codeql.analyzeDatabase(dir.name, resultsPath, suite.name);
 
     // Reading and parsing the results from the SARIF file."
     const results = JSON.parse(
@@ -49,7 +49,7 @@ describe("the codeql TS wrapper", function () {
     expect(results.runs[0].results).to.have.length(0);
 
     console.log("classify files");
-    const classification = codeql.classifyFiles(dir.name, "javascript");
+    const classification = await codeql.classifyFiles(dir.name, "javascript");
 
     // map to object
     const clasObj = Object.fromEntries(classification);

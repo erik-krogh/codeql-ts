@@ -46,6 +46,7 @@ export declare function languageFromQueryId(queryId: string): Language | undefin
  */
 export declare class CodeQL {
     private readonly packVersions;
+    private readonly timeout;
     /**
      * A cache mapping query IDs to `.ql` file paths.
      */
@@ -54,16 +55,23 @@ export declare class CodeQL {
      * Create a new CodeQL CLI wrapper.
      * @param codeQlVersion The version of the CodeQL CLI to use. E.g. `2.9.0`.
      * @param packVersions A mapping from query pack names to versions. E.g. `codeql/javascript-queries` to `1.1.2`.
+     * @param timeout The maximum time to wait for the command to execute, in milliseconds. Defaults to -1, which indicates no timeout.
      */
-    constructor(codeQlVersion: string, packVersions: Record<string, string>);
-    private static ensureGhCliInstalled;
-    private static ensureGhCliExtensionInstalled;
+    static make(codeQlVersion: string, packVersions: Record<string, string>, timeout?: number): Promise<CodeQL>;
+    /**
+     * Create a new CodeQL CLI wrapper.
+     * @param packVersions A mapping from query pack names to versions. E.g. `codeql/javascript-queries` to `1.1.2`.
+     * @param timeout The maximum time to wait for the command to execute, in milliseconds. Defaults to -1, which indicates no timeout.
+     */
+    private constructor();
+    private ensureGhCliInstalled;
+    private ensureGhCliExtensionInstalled;
     /** Simple wrapper around `spawn` for running the GitHub CLI. */
-    private static gh;
+    private gh;
     /** Get the version of the CodeQL CLI. */
-    private static getCliVersion;
+    private getCliVersion;
     /** Check that the given CodeQL version is installed, and if not install it. */
-    private static ensureCliVersion;
+    private ensureCliVersion;
     /**
      * Gets the name of the default query pack for the given language.
      */
@@ -85,18 +93,18 @@ export declare class CodeQL {
      *
      * Buildless extraction (build mode none) is enabled for Java and C#.
      */
-    runCommand(cwd: string, category: string, command: string, ...args: string[]): void;
+    runCommand(cwd: string, category: string, command: string, ...args: string[]): Promise<void>;
     /**
      * Create a CodeQL database.
      * @param language The language of the database.
      * @param sourceRoot The root of the source code to analyze.
      * @param databasePath The path to the database to create. Should be an empty (or non-existent) directory.
      */
-    createDatabase(language: Language, sourceRoot: string, databasePath: string): void;
+    createDatabase(language: Language, sourceRoot: string, databasePath: string): Promise<void>;
     /**
      * Run one or more CodeQL queries against a database and export the results as SARIF.
      */
-    analyzeDatabase(databasePath: string, output: string, ...queries: string[]): void;
+    analyzeDatabase(databasePath: string, output: string, ...queries: string[]): Promise<void>;
     /**
      * Create a `.qls` file referencing the given queries.
      */
@@ -109,5 +117,5 @@ export declare class CodeQL {
      *
      * @returns A map from file paths to the classification of the file.
      */
-    classifyFiles(databasePath: string, language: Language): Map<string, string>;
+    classifyFiles(databasePath: string, language: Language): Promise<Map<string, string>>;
 }
