@@ -11,6 +11,7 @@ export declare const LanguageIdToLanguage: {
     readonly js: "javascript";
     readonly py: "python";
     readonly rb: "ruby";
+    readonly rust: "rust";
     readonly swift: "swift";
     readonly actions: "actions";
 };
