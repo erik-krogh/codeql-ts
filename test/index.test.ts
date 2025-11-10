@@ -66,8 +66,8 @@ describe("the codeql TS wrapper", async function () {
   });
 
   it("should have the expected suites", async function () {
-    expect(codeql.SupportedLanguages).to.have.length(9);
-    expect(codeql.SupportedLanguageIds).to.have.length(9);
+    expect(codeql.SupportedLanguages).to.have.length(10);
+    expect(codeql.SupportedLanguageIds).to.have.length(10);
 
     expect(codeql.SupportedLanguages).to.include("javascript");
     expect(codeql.SupportedLanguageIds).to.include("js");
