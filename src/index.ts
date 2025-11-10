@@ -19,6 +19,7 @@ export const LanguageIdToLanguage = {
   js: "javascript",
   py: "python",
   rb: "ruby",
+  rust: "rust",
   swift: "swift",
   actions: "actions",
 } as const;
